@@ -9,7 +9,8 @@ import '../../Service/chatfeature.dart';
 import '../../Service/chatutils.dart';
 import '../../Service/encryption.dart';
 import '../../Service/groupfeatures.dart'; // Import ChatScreen for navigation
-import '../chat/Chatscreen.dart'; // Use the correct file for ChatScreen
+import '../../Service/self_destruct_service.dart';
+import '../chat/Chatscreen.dart' show ChatScreen, SelfDestructDialog; // Use the correct file for ChatScreen
 import '../chat/chatwidgets.dart';
 import '../profile_screen.dart';
 import 'create_group_screen.dart'; // Import AddGroupMembersScreen
@@ -75,7 +76,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     _initializeApp();
     _messageController.addListener(_updateSelfDestructEnabled);
     // Start self-destruct listener for group chat
-    SelfDestructService.startListener(widget.groupId, isGroup: true);
+    SelfDestructService.listenForSelfDestructMessages('groups/${widget.groupId}/messages');
     _scrollController.addListener(() {
       if (_scrollController.position.pixels <= 100 && !_loading && !_isLoadingMore && _hasMoreMessages) {
         _loadMoreMessages();
@@ -693,30 +694,34 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     setState(() { _pendingMediaPath = null; });
     try {
       setState(() => _messageError = null);
+      final now = Timestamp.now();
+      final currentUser = FirebaseAuth.instance.currentUser;
+      final key = EncryptionService.getGroupKey(widget.groupId);
       final data = {
         'selfDestruct': true,
         'destroyAfter': duration,
-        'createdAt': Timestamp.now(),
+        'createdAt': now,
+        'timestamp': now,
+        'fromUid': currentUser?.uid,
+        'fromUsername': currentUser?.displayName ?? '',
+        'groupId': widget.groupId,
       };
       if (mediaPath != null) {
-        await ChatFeatures.sendMediaMessage(
-          file: File(mediaPath),
-          fileName: mediaPath.split('/').last,
-          peerUid: '',
-          groupId: widget.groupId,
-          isGroup: true,
-          customFields: data,
-          setUploadingState: (uploading) => setState(() => _isUploading = uploading),
-          showSnackBar: _showSnackBar,
-        );
+        final uploadResult = await ChatFeatures.uploadToCloudinary(File(mediaPath), 'media');
+        data['mediaUrl'] = EncryptionService.encryptText(uploadResult ?? '', key);
+        data['mediaPublicId'] = mediaPath.split('/').last.split('.').first;
+        await FirebaseFirestore.instance
+            .collection('groups')
+            .doc(widget.groupId)
+            .collection('messages')
+            .add(data);
       } else {
-        await ChatFeatures.sendMessage(
-          text: text,
-          peerUid: '',
-          groupId: widget.groupId,
-          isGroup: true,
-          customFields: data,
-        );
+        data['message'] = EncryptionService.encryptText(text, key);
+        await FirebaseFirestore.instance
+            .collection('groups')
+            .doc(widget.groupId)
+            .collection('messages')
+            .add(data);
       }
     } catch (e) {
       setState(() {
@@ -733,7 +738,7 @@ class _GroupChatScreenState extends State<GroupChatScreen> {
     _recordTimer?.cancel();
     _messageController.removeListener(_updateSelfDestructEnabled);
     // Stop self-destruct listener for group chat
-    SelfDestructService.stopListener();
+    SelfDestructService.stopListening('groups/${widget.groupId}/messages');
     super.dispose();
   }
 
@@ -1512,78 +1517,3 @@ class _GroupInfoBottomSheetState extends State<GroupInfoBottomSheet> {
   }
 }
 
-class SelfDestructDialog extends StatefulWidget {
-  final String messagePreview;
-  final bool hasMedia;
-  final Function(int) onSend;
-
-  const SelfDestructDialog({
-    Key? key,
-    required this.messagePreview,
-    required this.hasMedia,
-    required this.onSend,
-  }) : super(key: key);
-
-  @override
-  State<SelfDestructDialog> createState() => _SelfDestructDialogState();
-}
-
-class _SelfDestructDialogState extends State<SelfDestructDialog> {
-  int _selectedDuration = 10;
-  final List<int> _durations = [10, 30, 60, 120];
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: Text('Send Self-Destructing Message'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Text(
-            'This message will self-destruct after a set duration.',
-            style: TextStyle(color: Colors.black87),
-          ),
-          SizedBox(height: 16),
-          Text(
-            'Message Preview: ${widget.messagePreview.isEmpty ? "No text entered" : widget.messagePreview}',
-            style: TextStyle(fontWeight: FontWeight.bold),
-          ),
-          if (widget.hasMedia) ...[
-            SizedBox(height: 8),
-            Text(
-              'Media attached',
-              style: TextStyle(color: Colors.teal, fontWeight: FontWeight.bold),
-            ),
-          ],
-          SizedBox(height: 16),
-          Text('Select duration (in seconds):'),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: _durations.map((duration) {
-              return ChoiceChip(
-                label: Text('$duration'),
-                selected: _selectedDuration == duration,
-                onSelected: (_) {
-                  setState(() => _selectedDuration = duration);
-                },
-              );
-            }).toList(),
-          ),
-        ],
-      ),
-      actions: [
-        TextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text('Cancel'),
-        ),
-        ElevatedButton(
-          onPressed: () {
-            widget.onSend(_selectedDuration);
-            Navigator.of(context).pop();
-          },
-          child: Text('Send'),
-        ),
-      ],
-    );
-  }
-}

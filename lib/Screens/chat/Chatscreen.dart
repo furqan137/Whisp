@@ -1,14 +1,13 @@
 import 'dart:async';
-import 'dart:convert';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_sound/flutter_sound.dart';
-import 'package:http/http.dart' as http;
 import '../../Service/chatfeature.dart';
 import '../../Service/chatutils.dart';
 import '../../Service/encryption.dart';
+import '../../Service/self_destruct_service.dart';
 import 'chatwidgets.dart';
 import 'share_message_screen.dart';
 
@@ -64,7 +63,7 @@ class _ChatScreenState extends State<ChatScreen> {
     super.initState();
     _initializeApp();
     _messageController.addListener(_updateSelfDestructEnabled);
-    SelfDestructService.startListener(chatId, isGroup: false);
+    SelfDestructService.listenForSelfDestructMessages('chats/$chatId/messages');
   }
 
   Future<void> _initializeApp() async {
@@ -348,36 +347,6 @@ class _ChatScreenState extends State<ChatScreen> {
     });
   }
 
-  Future<void> _deletePersonalMessage(Map<String, dynamic> msg) async {
-    try {
-      final currentUser = FirebaseAuth.instance.currentUser;
-      if (currentUser == null) return;
-
-      final chatId = ChatUtils.getChatId(currentUser.uid, widget.peerUid);
-
-      // Delete media from Cloudinary if applicable
-      if (msg['mediaType'] != null && msg['decryptedUrl'] != null) {
-        await ChatFeatures.deleteFromCloudinary(msg['decryptedUrl'], msg['mediaType']);
-      }
-
-      // Only delete if the message belongs to the current user
-      if (msg['fromUid'] == currentUser.uid) {
-        await FirebaseFirestore.instance
-            .collection('chats')
-            .doc(chatId)
-            .collection('messages')
-            .doc(msg['id'])
-            .delete();
-
-        _showSnackBar('Message deleted successfully', color: Colors.green);
-      } else {
-        _showSnackBar('You can only delete your own messages');
-      }
-    } catch (e) {
-      _showSnackBar('Failed to delete message');
-    }
-  }
-
   void _updateSelfDestructEnabled() {
     setState(() {
       _isSelfDestructEnabled = _messageController.text.trim().isNotEmpty || _pendingMediaPath != null;
@@ -525,11 +494,13 @@ class _ChatScreenState extends State<ChatScreen> {
 
   @override
   void dispose() {
+    SelfDestructService.stopListening('chats/$chatId/messages');
+    _messageController.removeListener(_updateSelfDestructEnabled);
+    _messageController.dispose();
+    _scrollController.dispose();
     _audioRecorder?.closeRecorder();
     _audioPlayer?.closePlayer();
-    _scrollController.dispose();
     _recordTimer?.cancel();
-    SelfDestructService.stopListener();
     super.dispose();
   }
 
@@ -744,58 +715,5 @@ class _SelfDestructDialogState extends State<SelfDestructDialog> {
         ),
       ),
     );
-  }
-}
-
-// Self-Destruct Service Class
-class SelfDestructService {
-  static StreamSubscription? _listener;
-
-  static void startListener(String chatId, {bool isGroup = false}) {
-    final collection = isGroup ? 'groups' : 'chats';
-    final messagesRef = FirebaseFirestore.instance
-        .collection(collection)
-        .doc(chatId)
-        .collection('messages');
-
-    _listener?.cancel();
-    _listener = messagesRef.snapshots().listen((snapshot) async {
-      final now = DateTime.now();
-      for (var doc in snapshot.docs) {
-        final data = doc.data();
-        if (data['selfDestruct'] == true && data['createdAt'] != null && data['destroyAfter'] != null) {
-          final createdAt = (data['createdAt'] as Timestamp).toDate();
-          final destroyAfter = data['destroyAfter'] as int;
-          final expireTime = createdAt.add(Duration(seconds: destroyAfter));
-          if (now.isAfter(expireTime)) {
-            // Delete media from Cloudinary if present
-            if (data['mediaUrl'] != null && data['mediaPublicId'] != null) {
-              await _deleteFromCloudinary(data['mediaPublicId']);
-            }
-            // Delete Firestore message
-            await doc.reference.delete();
-          }
-        }
-      }
-    });
-  }
-
-  static Future<void> _deleteFromCloudinary(String publicId) async {
-    // Replace with your Cloudinary credentials
-    const cloudName = 'YOUR_CLOUD_NAME';
-    const apiKey = 'YOUR_API_KEY';
-    const apiSecret = 'YOUR_API_SECRET';
-    final url =
-        'https://api.cloudinary.com/v1_1/$cloudName/resources/image/upload?public_ids[]=$publicId&invalidate=true';
-    final auth = 'Basic ' + base64Encode(utf8.encode('$apiKey:$apiSecret'));
-    await http.delete(
-      Uri.parse(url),
-      headers: {'Authorization': auth},
-    );
-  }
-
-  static void stopListener() {
-    _listener?.cancel();
-    _listener = null;
   }
 }

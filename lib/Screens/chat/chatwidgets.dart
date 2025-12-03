@@ -673,7 +673,7 @@ class MediaPickerBottomSheet extends StatelessWidget {
                 _PickerOption(
                   icon: Icons.description,
                   label: 'Document',
-                  subtitle: 'PDF, Word, etc.',
+                  subtitle: 'Word',
                   color: Colors.deepPurple,
                   onTap: () {
                     Navigator.pop(context);

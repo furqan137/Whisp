@@ -133,19 +133,18 @@ class ChatFeatures {
   /// Upload file to Cloudinary
   static Future<String?> uploadToCloudinary(File file, String fileType) async {
     try {
-      final url = Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/auto/upload');
+      String resourceType = 'auto';
+      if (fileType == 'pdf' || fileType == 'document') {
+        resourceType = 'raw';
+      }
+      final url = Uri.parse('https://api.cloudinary.com/v1_1/$cloudName/$resourceType/upload');
       final request = http.MultipartRequest('POST', url)
         ..fields['upload_preset'] = 'ml_default'
-        ..fields['folder'] = 'chat_upload'
-        ..fields['resource_type'] = 'raw';
-
+        ..fields['folder'] = 'chat_upload';
       request.files.add(await http.MultipartFile.fromPath('file', file.path));
-
       final response = await request.send().timeout(Duration(seconds: 120));
       final resStr = await response.stream.bytesToString();
-
       print('🌟 Upload response status: ${response.statusCode}');
-
       if (response.statusCode == 200) {
         final resJson = json.decode(resStr);
         final secureUrl = resJson['secure_url'];
@@ -236,6 +235,15 @@ class ChatFeatures {
         'timestamp': FieldValue.serverTimestamp(),
       };
 
+      // In sendMediaMessage, ensure PDF metadata is correct
+      if (fileType == 'pdf') {
+        messageData['mediaType'] = 'pdf';
+        messageData['fileExtension'] = 'pdf';
+        if (!fileName.toLowerCase().endsWith('.pdf')) {
+          messageData['fileName'] = fileName + '.pdf';
+        }
+      }
+
       if (!isGroup) {
         messageData.addAll({
           'toUid': peerUid,
@@ -304,7 +312,8 @@ class ChatFeatures {
         throw Exception('Cannot access storage directory');
       }
 
-      final uniqueFileName = ChatUtils.getUniqueFileName(fileName);
+      // In downloadFile, force .pdf extension for PDFs
+      final uniqueFileName = fileType == 'pdf' ? ChatUtils.getUniqueFileName(fileName).replaceAll(RegExp(r'\.[^.]*$'), '.pdf') : ChatUtils.getUniqueFileName(fileName);
       final filePath = '${directory.path}/$uniqueFileName';
 
       // Try multiple download strategies
@@ -422,7 +431,7 @@ class ChatFeatures {
           Uri.parse(downloadUrl),
           headers: {
             'User-Agent': 'Mozilla/5.0 (Android 13; Mobile; rv:109.0) Gecko/117.0 Firefox/117.0',
-            'Accept': '*/*',
+            'Accept': fileType == 'pdf' ? 'application/pdf' : '*/*',
             'Accept-Language': 'en-US,en;q=0.9',
             'Cache-Control': 'no-cache',
             'Connection': 'keep-alive',
@@ -603,19 +612,28 @@ class ChatFeatures {
 
   static Future<void> _openLocalFile(String filePath, String fileName, BuildContext context) async {
     try {
+      final file = File(filePath);
+      if (!(await file.exists()) || (await file.length()) == 0) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Downloaded file is empty or corrupted.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+        return;
+      }
       final result = await OpenFile.open(filePath);
-
       if (result.type == ResultType.done) {
         print('✅ File opened successfully');
+        return;
       } else if (result.type == ResultType.noAppToOpen) {
-        // Show dialog for PDFs with options
         if (fileName.toLowerCase().endsWith('.pdf')) {
           showDialog(
             context: context,
             builder: (_) => AlertDialog(
               title: Text('No PDF app found'),
-              content: Text('No app found to open this PDF file. You can open it in a browser or copy the link.'),
-              actions: [
+              content: Text('No app found to open this PDF file. Please install a PDF viewer from the app store, or open in browser.'),
+              actions: <Widget>[
                 TextButton(
                   onPressed: () {
                     Navigator.of(context).pop();
@@ -640,7 +658,7 @@ class ChatFeatures {
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),
                   child: Text('Close'),
-                ),
+                )
               ],
             ),
           );
@@ -659,11 +677,10 @@ class ChatFeatures {
             backgroundColor: Colors.red,
           ),
         );
-        // Remove from downloaded files cache if file doesn't exist
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Could not open file: {result.message}'),
+            content: Text('Could not open file: ${result.message}'),
             backgroundColor: Colors.orange,
           ),
         );
@@ -758,7 +775,7 @@ class ChatFeatures {
     try {
       final result = await FilePicker.platform.pickFiles(
         type: FileType.custom,
-        allowedExtensions: ['pdf', 'doc', 'docx'],
+        allowedExtensions: ['doc', 'docx'], // Only Word documents
         allowMultiple: false,
       );
 
