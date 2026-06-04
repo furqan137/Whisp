@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "939231849765",
+    "project_id": "whisp-d2cd8",
+    "storage_bucket": "whisp-d2cd8.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:939231849765:android:c091b2b646af9aed10becc",
+        "android_client_info": {
+          "package_name": "com.example.whisp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCe1B4m9pREj9CqpcZcOxMcOGhu9NexLY8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
