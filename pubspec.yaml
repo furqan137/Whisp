@@ -1,0 +1,60 @@
+name: whisp
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.9.0
+
+dependencies:
+  openvpn_flutter: ^1.3.0
+  flutter:
+    sdk: flutter
+  firebase_core: ^4.1.1
+  cloud_firestore: ^6.0.2
+  firebase_auth: ^6.1.0
+  app_tracking_transparency: ^2.0.4
+  provider: ^6.1.5
+  firebase_storage: ^13.0.4
+  image_picker: ^0.8.7+7
+  crypto: ^3.0.2
+  encrypt: ^5.0.3
+  http: ^1.1.0
+  cupertino_icons: ^1.0.8
+  firebase_messaging: ^16.0.1
+  flutter_local_notifications: ^19.4.0
+  shared_preferences: ^2.1.1
+  file_picker: ^10.3.3
+
+  url_launcher: ^6.2.5
+  video_player: ^2.7.2
+  saver_gallery: ^4.0.1
+  flutter_sound: ^9.28.0
+  permission_handler: ^12.0.1
+  open_file: ^3.5.10
+  intl: ^0.18.1
+  flutter_launcher_icons: ^0.14.4
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter_launcher_icons:
+  android: true
+  ios: true
+  image_path: "assets/icon/app_icon.png"
+  min_sdk_android: 21
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/Splashlogo.png
+    - assets/onboarding1.png
+    - assets/onboarding2.png
+    - assets/onboarding3.png
+    - assets/onboarding4.png
+    - assets/startchat.png
+    - assets/vpn/
